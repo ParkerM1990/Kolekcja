@@ -1,0 +1,113 @@
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8" />
+    <title>Atlas Terminali PRO — Edytor pozycji etykiet</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: Arial, sans-serif; margin: 10px; }
+        #map { height: 80vh; margin-top: 10px; }
+        .label-div {
+            background: white;
+            padding: 2px 4px;
+            border: 1px solid black;
+            border-radius: 3px;
+            font-size: 12px;
+            white-space: nowrap;
+            box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+            user-select: none;
+            pointer-events: auto;
+        }
+        .controls { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h2>Atlas Terminali PRO — Edytor etykiet</h2>
+
+    <div class="controls">
+        <input type="file" id="file-input" accept=".xlsx, .xls" />
+        <input type="file" id="json-input" accept=".json" />
+        <button id="export-json" disabled>Pobierz aktualne pozycje etykiet (JSON)</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <script>
+        var map = L.map('map').setView([52.23, 21.01], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        let labelMarkers = [];
+
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            var file = e.target.files[0];
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var data = new Uint8Array(e.target.result);
+                var workbook = XLSX.read(data, {type: 'array'});
+                var sheetName = workbook.SheetNames[0];
+                var sheet = workbook.Sheets[sheetName];
+                var json = XLSX.utils.sheet_to_json(sheet);
+
+                labelMarkers = [];
+                json.forEach(function(row) {
+                    var lat = parseFloat(row['Latitude']);
+                    var lon = parseFloat(row['Longitude']);
+                    var termId = row['Terminal ID'];
+
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        L.circleMarker([lat, lon], {
+                            radius: 6, color: 'green', fillColor: 'green', fillOpacity: 0.7
+                        }).addTo(map);
+
+                        var labelIcon = L.divIcon({
+                            className: 'label-div',
+                            html: termId,
+                            iconSize: null
+                        });
+
+                        var labelMarker = L.marker([lat, lon], { icon: labelIcon, draggable: true }).addTo(map);
+                        labelMarkers.push({ id: termId, marker: labelMarker });
+                    }
+                });
+                document.getElementById('export-json').disabled = false;
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        document.getElementById('export-json').addEventListener('click', function() {
+            var exportData = labelMarkers.map(function(obj) {
+                var pos = obj.marker.getLatLng();
+                return { 'Terminal ID': obj.id, 'Label Latitude': pos.lat, 'Label Longitude': pos.lng };
+            });
+            var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+            var dlAnchorElem = document.createElement('a');
+            dlAnchorElem.setAttribute("href", dataStr);
+            dlAnchorElem.setAttribute("download", "pozycje_etykiet.json");
+            dlAnchorElem.click();
+        });
+
+        document.getElementById('json-input').addEventListener('change', function(e) {
+            var file = e.target.files[0];
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var importData = JSON.parse(e.target.result);
+                importData.forEach(function(obj) {
+                    var found = labelMarkers.find(m => m.id == obj['Terminal ID']);
+                    if (found) {
+                        found.marker.setLatLng([obj['Label Latitude'], obj['Label Longitude']]);
+                    }
+                });
+            };
+            reader.readAsText(file);
+        });
+    </script>
+</body>
+</html>
